@@ -16,7 +16,7 @@ Project is divided in three parts.
 3. The last step will be to transfer the objects from memory to text, 0% for now.
 
 
-Java objects for storing language code are organized in a very simple tree.
+Java objects for storing language code are very very simple and are organized in a very simple tree.
 
 Both the content and the variety of these objects can be adapted to any needs and will be time to time changed to be more suitable.
 
