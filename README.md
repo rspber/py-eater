@@ -22,6 +22,6 @@ Both the content and the variety of these objects can be adapted to any needs an
 
 The task of this project is to transform objects obtained from the python parser into objects from which Java code can be created.
 
-For this task to be feasible, the entire project tree will is accessible so that class contents and object types can be determined.
+For this task to be feasible, the entire project tree is accessible so that class contents and object types can be determined.
 
 And for the end, such objects tree can be executable, so testing debug will be possible.
