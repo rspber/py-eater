@@ -1,9 +1,12 @@
 package pyeater.eater;
 
 import java.io.File;
+import java.util.List;
 import java.util.Scanner;
 
+import pyeater.code.Code;
 import pyeater.py.Directory;
+import pyeater.py.PyCode;
 
 public class PyEater {
 
@@ -18,14 +21,14 @@ public class PyEater {
 			final Scanner scanner = new Scanner(file);
 			scanner.useDelimiter("\r*\n");
 			final PyParse pyParse = new PyParse(scanner);
-			pyParse.readCode(-1);
+			final List<Code> code = pyParse.readCode(-1);
+			dir.addPy( new PyCode(file.getName(), code));
 		}
 		catch( Exception e) {
 			++errcount;
 			System.out.println("Error: " + e.getMessage());
-//			throw new RuntimeException(e);
+			throw new RuntimeException(e);
 		}
-
 	}
 
 	public void scan(final Directory dir, final File repo)

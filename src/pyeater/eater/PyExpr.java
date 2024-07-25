@@ -6,27 +6,30 @@ import java.util.Scanner;
 
 import pyeater.value.BackElvisFor;
 import pyeater.value.BackElvisIf;
-import pyeater.value.NamedRefValue;
+import pyeater.value.AnyName;
+import pyeater.value.RefNameTypedDefault;
 import pyeater.value.Oper;
 import pyeater.value.Value;
 import pyeater.value.Value3Dot;
-import pyeater.value.ValueWithArr;
+import pyeater.value.ValueWithArray;
+import pyeater.value.Values;
 import pyeater.value.ValueBinary;
 import pyeater.value.ValueCall;
-import pyeater.value.ValueEmpty;
-import pyeater.value.RecField;
+import pyeater.value.RecName;
 import pyeater.value.ValueFormatted;
 import pyeater.value.ValueJson;
+import pyeater.value.ValueJsonField;
 import pyeater.value.ValueLambda;
 import pyeater.value.ValueName;
-import pyeater.value.NamedValue;
+import pyeater.value.ValueNo;
 import pyeater.value.ValueNumber;
 import pyeater.value.ValueQuoted;
+import pyeater.value.ValueRecName;
+import pyeater.value.ValueOfName;
 import pyeater.value.ValueRegExp;
 import pyeater.value.ValueTypedDefault;
-import pyeater.value.Values;
-import pyeater.value.ValuesInArr;
-import pyeater.value.Params;
+import pyeater.value.ValuesInPar;
+import pyeater.value.ValuesInArray;
 
 public class PyExpr extends PySkipper {
 
@@ -58,7 +61,7 @@ public class PyExpr extends PySkipper {
 	}
 
 	Value readLambda() {
-		final List<NamedRefValue> list = new ArrayList<>();
+		final List<RefNameTypedDefault> list = new ArrayList<>();
 		do {
 			int stars = 0;
 			while( blanks_() == '*' ) {
@@ -66,22 +69,31 @@ public class PyExpr extends PySkipper {
 				++ip;
 			}
 			final String name = name_();
-			final Value value = skip('=') ? readExpr() : null;
-			list.add( new NamedRefValue(stars, name, value));
+			Value defualt = null;
+			if( skip('=') ) {
+				defualt = readExpr();
+			}
+			list.add( new RefNameTypedDefault(stars, name, null, defualt));
 		}
 		while( skip(',') );
-		final Value body = skip_(':') ? readExpr() : null;
+		Value body = null;
+		if( skip_(':') ) {
+			body = readExpr();
+		}
 		return new ValueLambda(list, body);
 	}
 
-	private List<NamedValue> readJson(final char c) {
-		final List<NamedValue> list = new ArrayList<>();
+	private List<ValueJsonField> readJson(final char c) {
+		final List<ValueJsonField> list = new ArrayList<>();
 		++ip;
 		if( !skip(c) ) {
 			do {
 				final Value name = readExpr_();
-				final Value value = skip(':') ? readExpr() : null;
-				list.add( new NamedValue(name, value));
+				Value value = null;
+				if( skip(':') ) {
+					value = readExpr();
+				}
+				list.add( new ValueJsonField(name, value));
 				skip(',');
 			}
 			while( !skip(c) );
@@ -89,25 +101,25 @@ public class PyExpr extends PySkipper {
 		return list;
 	}
 
-	Value readRecName_(String name) {
-		Value rec = new ValueName(name);
-		while( skip_('.') && (name = name_()) != null ) {
-			rec = new RecField(rec, name);
+	AnyName readRecName_(String nxtName) {
+		AnyName vName = new AnyName(nxtName);
+		while( skip_('.') && (nxtName = name_()) != null ) {
+			vName = new RecName(nxtName, vName);
 		}
-		return rec;
+		return vName;
 	}
 
 	Value forForFor() {
 		if( skip('(') ) {
-			return new Values(cntRead( (Object) -> forForFor(), null, ')'));	// in Par ?
+			return new ValuesInPar(cntRead( (Object) -> forForFor(), ')'));	// in Par ?
 		}
 		else {
 			if( skip_('[') ) {
-				return new ValuesInArr(readInPar(']'));
+				return new ValuesInArray(readInArr(']'));
 			}
 			else {
 				skip_('*');
-				return readRecName_(name_());
+				return new ValueOfName(readRecName_(name_()));
 			}
 		}
 	}
@@ -121,34 +133,55 @@ public class PyExpr extends PySkipper {
 		return list;
 	}
 
-	Value readInPar(final char c) {
+	List<Value> readInArr(final char c) {
 		++ip;
-		List<ValueTypedDefault> list = new ArrayList<>();
+		final List<Value> list = new ArrayList<>();
+		blanks();
+		loopTo( (Object) -> {
+			if( skip(':') ) {
+				list.add(new ValueNo());
+			}
+			else {
+				list.add(readExpr());
+			}
+		}, c);
+		return list;
+	}
+
+	List<ValueTypedDefault> readParams(final char c) {
+		++ip;
+		final List<ValueTypedDefault> list = new ArrayList<>();
 		blanks();
 		loopTo( (Object) -> {
 			final Value value = readExpr();
-			final Value type = skip(':') ? readExpr() : null;
-			final Value defualt = skip('=') ? readExpr() : null;
+			Value type = null;
+			if( skip(':') ) {
+				type = readExpr();
+			}
+			Value defualt = null;
+			if( skip('=') ) {
+				defualt = readExpr();
+			}
 			list.add( new ValueTypedDefault(value, type, defualt));
 		}, c);
-		return back_elvis(new Params(list));
+		return list;
 	}
 
 	protected Value cont(Value value) {
 		while(true) {
 			if( blanks_() == '(' ) {							// read function call parameters
-				value = new ValueCall(value, readInPar(')'));
+				value = back_elvis(new ValueCall(value, readParams(')')));
 				isNextLine = false;
 				continue;
 			}
 			if( blanks_() == '[') {								// read nested values in square bracketS
-				value = new ValueWithArr(value, readInPar(']'));
+				value = back_elvis(new ValueWithArray(value, readInArr(']')));
 				isNextLine = false;
 				continue;
 			}
 			if( blanks1() == '.' ) {							// read name of object field or function
 				++ip;
-				value = new RecField(value, name_() );
+				value = new ValueRecName(value, name_() );
 				isNextLine = false;
 				continue;
 			}
@@ -190,7 +223,7 @@ public class PyExpr extends PySkipper {
 				++ip;
 				c = char_();
 			}
-			Object q = readQuoted_();
+			String q = readQuoted_();
 			if( q != null ) {
 				Value v = new ValueQuoted(q);
 				if( isf ) {
@@ -227,7 +260,7 @@ public class PyExpr extends PySkipper {
 			}
 		}
 		if( c == '[' ) {										// read values in brackets as value
-			return cont(new ValuesInArr(readInPar(']')));
+			return cont(back_elvis(new ValuesInArray(readInArr(']'))));
 		}
 		if( c == '{' ) {										// read object in place as value
 			return cont(new ValueJson(readJson('}')));
@@ -355,10 +388,11 @@ public class PyExpr extends PySkipper {
 		}
 		final Value value;
 		if( skip_('(') ) {
-			value = cont(back_elvis(new Values(cntRead( (Object) -> readExpr_(), new ValueEmpty(), ')' ))));
+			value = cont(back_elvis(new ValuesInPar(cntRead( (Object) -> readExpr_(), ')' ))));
 		}
 		else {
 			if( skipWord_("not") ) {
+				blanks();
 				return readExpr_();
 			}
 			if( skipWord_("lambda") ) {
@@ -367,6 +401,9 @@ public class PyExpr extends PySkipper {
 			if( skipWord_("await") ) {
 			}
 			if( skipWord_("yield") ) {
+				if( skip_('(') ) {
+					return new ValuesInPar(cntRead( (Object) -> readExpr_(), ')' ));
+				}
 			}
 			int lin = lineNo;
 			int pfx = ident;
@@ -463,7 +500,7 @@ public class PyExpr extends PySkipper {
 				o2.add( readExpr_() );
 			}
 			if( o2 != null ) {
-				expr = new Oper("&&", o2);
+				expr = new Oper(null, "&&", null, o2);
 				continue;
 			}
 			while( skipWord("or") ) {
@@ -474,7 +511,7 @@ public class PyExpr extends PySkipper {
 				o2.add( readExpr_() );
 			}
 			if( o2 != null ) {
-				expr = new Oper("||", o2);
+				expr = new Oper(null, "||", null, o2);
 				continue;
 			}
 			break;

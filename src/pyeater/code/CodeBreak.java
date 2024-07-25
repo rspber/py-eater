@@ -1,10 +1,14 @@
 package pyeater.code;
 
-import pyeater.value.Value;
-
-public class CodeBreak extends Value {
+public class CodeBreak extends Code {
 
 	public CodeBreak() {
+		super(CaseCode.CodeBreak);
+	}
+
+	@Override
+	public String toJava(final String pfx) {
+		return pfx + "break;";
 	}
 
 }

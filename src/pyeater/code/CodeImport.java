@@ -1,15 +1,21 @@
 package pyeater.code;
 
-import java.util.List;
+import pyeater.value.AnyName;
 
-import pyeater.value.Value;
+public class CodeImport extends Code {
 
-public class CodeImport extends Value {
+	public final AnyName from;
+	public final AnyName lib;
 
-	final Value[] imps;
-	
-	public CodeImport(final List<Value> imps) {
-		this.imps = imps.toArray(new Value[imps.size()]);
+	public CodeImport(final AnyName from, final AnyName lib) {
+		super(CaseCode.CodeImport);
+		this.from = from;
+		this.lib = lib;
+	}
+
+	@Override
+	public String toJava(final String pfx) {
+		return pfx + "import " + (from != null ? from.toJava() + "." : "") + (lib != null ? lib.toJava() : "") + ";" ;
 	}
 
 }

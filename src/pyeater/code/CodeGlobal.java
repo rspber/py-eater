@@ -2,14 +2,18 @@ package pyeater.code;
 
 import java.util.List;
 
-import pyeater.value.Value;
+public class CodeGlobal extends Code {
 
-public class CodeGlobal extends Value {
+	public final String[] names;
 
-	final String[] glob;
-	
-	public CodeGlobal(final List<String> glob) {
-		this.glob = glob.toArray(new String[glob.size()]);
+	public CodeGlobal(final List<String> names) {
+		super(CaseCode.CodeGlobal);
+		this.names = names.toArray(new String[names.size()]);
+	}
+
+	@Override
+	public String toJava(final String pfx) {
+		return pfx + (names != null ? String.join(", ", names) : "EMPTY") + ";";
 	}
 
 }

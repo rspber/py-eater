@@ -4,22 +4,23 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
 
-import pyeater.code.Arg;
-import pyeater.code.CodeAnnotation;
+import pyeater.code.Code;
+import pyeater.code.Annotation;
 import pyeater.code.CodeAssert;
 import pyeater.code.CodeBreak;
 import pyeater.code.CodeClass;
 import pyeater.code.CodeContinue;
-import pyeater.code.CodeDef;
+import pyeater.code.CodeDeclare;
+import pyeater.code.CodeFunc;
 import pyeater.code.CodeDel;
 import pyeater.code.CodeExcept;
 import pyeater.code.CodeFor;
-import pyeater.code.CodeFrom;
 import pyeater.code.CodeGlobal;
 import pyeater.code.CodeIfThen;
 import pyeater.code.CodeIfThenElse;
 import pyeater.code.CodeImport;
 import pyeater.code.CodeNonLocal;
+import pyeater.code.CodeOfValue;
 import pyeater.code.CodeRaise;
 import pyeater.code.CodeReturn;
 import pyeater.code.CodeSet;
@@ -27,10 +28,25 @@ import pyeater.code.CodeTry;
 import pyeater.code.CodeWhile;
 import pyeater.code.CodeWith;
 import pyeater.code.CodeYield;
+import pyeater.value.AnyName;
+import pyeater.value.RefNameTypedDefault;
+import pyeater.value.RecName;
 import pyeater.value.Value;
+import pyeater.value.ValueAs;
+import pyeater.value.ValueTypedDefault;
 import pyeater.value.Values;
+import pyeater.value.ValuesInPar;
 
 public class PyParse extends PyExpr {
+
+	// scanner is in class or subclass
+	int inClass;
+
+	// scanner is in def or subdef
+	int inDef;
+
+	// current annotation
+	final List<Annotation> annotations = new ArrayList<>();
 
 	public PyParse(final Scanner scanner) {
 		super(scanner);
@@ -54,20 +70,20 @@ public class PyParse extends PyExpr {
 		return list;
 	}
 
-	private Value readIf() {
+	private Code readIf() {
 		final int code_depth = ident;
 		List<CodeIfThen> list = new ArrayList<>();
 		boolean ok = true;
 		while( ok ) {
 			final Value expr = readExpr();
 			eoc();
-			final List<Value> code = readCode(code_depth);
+			final List<Code> code = readCode(code_depth);
 			list.add( new CodeIfThen(expr, code));
 			ok = skipWord("elif");
 		}
 		if( skipWord("else") ) {
 			eoc();
-			List<Value> elso = readCode(code_depth);
+			List<Code> elso = readCode(code_depth);
 			return new CodeIfThenElse(list, elso);
 		}
 		else {
@@ -75,7 +91,7 @@ public class PyParse extends PyExpr {
 		}
 	}
 
-	private Value readFor() {
+	private Code readFor() {
 		final int code_depth = ident;
 		final List<Value> ffor = readForFor();
 		reqWord("in");
@@ -85,10 +101,10 @@ public class PyParse extends PyExpr {
 		}
 		while( skip(',') );
 		eoc();
-		final List<Value> code = readCode(code_depth);
+		final List<Code> code = readCode(code_depth);
 		if( skipWord("else") ) {
 			eoc();
-			final List<Value> elso = readCode(code_depth);
+			final List<Code> elso = readCode(code_depth);
 			return new CodeFor(ffor, expr, code, elso);
 		}
 		else {
@@ -96,39 +112,36 @@ public class PyParse extends PyExpr {
 		}
 	}
 
-	private Value readWith() {
+	private Code readWith() {
 		final int code_depth = ident;
 		final List<Value> list = new ArrayList<>();
 		do {
 			final Value expr = readExpr();
+			List<AnyName> as = new ArrayList<>();
 			if( skipWord("as") ) {
 				if( skip('(') ) {
-					do {
-						token();
-					}
-					while( skip(','));
-					req(')');
+					as = cntRead( (Object) -> new AnyName(token()), ')');
 				}
 				else {
-					readRecName_(name_());
+					as.add(readRecName_(name_()));
 				}
 			}
-			list.add(expr);
+			list.add( new ValueAs(expr, as));
 		}
 		while( skip(',') );
 		eoc();
-		final List<Value> code = readCode(code_depth);
+		final List<Code> code = readCode(code_depth);
 		return new CodeWith(list, code);
 	}
 
-	private Value readWhile() {
+	private Code readWhile() {
 		final int code_depth = ident;
 		final Value expr = readExpr();
 		eoc();
-		final List<Value> code = readCode(code_depth);
+		final List<Code> code = readCode(code_depth);
 		if( skipWord("else") ) {
 			eoc();
-			List<Value> elso = readCode(code_depth);
+			List<Code> elso = readCode(code_depth);
 			return new CodeWhile(expr, code, elso);
 		}
 		else {
@@ -136,38 +149,36 @@ public class PyParse extends PyExpr {
 		}
 	}
 
-	private Value readTry() {
+	private Code readTry() {
 		final int code_depth = ident;
 		eoc();
-		final List<Value> code = readCode(code_depth);
+		final List<Code> code = readCode(code_depth);
 		List<CodeExcept> excepts = new ArrayList<>();
-		final List<Value> excpts = new ArrayList<>();
+		final List<AnyName> excpts = new ArrayList<>();
 		while( skipWord("except") ) {
 			if( skip_('(') ) {
 				loopTo( (Object) -> excpts.add(readRecName_(name_())), ')');
 			}
 			else {
-				final List<Value> list = new ArrayList<>();
 				do {
-					list.add(readRecName_(name_()));
+					excpts.add(readRecName_(name_()));
 				}
 				while( skipWord("or"));
-				excpts.add( new Values(list));
 			}
 			String as = null;
 			if( skipWord("as") ) {
 				as = name_();
 			}
 			eoc();
-			final List<Value> excco = readCode(code_depth);
-			List<Value> elexcco = null;
+			final List<Code> excco = readCode(code_depth);
+			List<Code> elexcco = null;
 			if( skipWord( "else") ) {
 				eoc();
 				elexcco = readCode(code_depth);
 			}
 			excepts.add( new CodeExcept(excpts, as, excco, elexcco) );
 		}
-		List<Value> finaly = null;
+		List<Code> finaly = null;
 		if( skipWord("finally") ) {
 			eoc();
 			finaly = readCode(code_depth);
@@ -175,7 +186,7 @@ public class PyParse extends PyExpr {
 		return new CodeTry(code, excepts, finaly);
 	}
 
-	private Value readReturn() {
+	private Code readReturn() {
 		int lin = lineNo;
 		blanks();
 		if( lin == lineNo ) {
@@ -184,57 +195,60 @@ public class PyParse extends PyExpr {
 		return new CodeReturn(null);
 	}
 
-	private Value readRaise() {
+	private Code readRaise() {
 		final int code_depth = ident;
 		Value expr = null;
+		Value from = null;
 		if( blanks_() != 0 ) {
 			expr = readExpr_();
 			if( (code_depth <= ident || ip > ident ) && skipWord_("from") ) {
-				final Value from = readExpr_();
-				if( skipWord_("import") ) {
-					readImport_();
-				}
+				from = readExpr_();
 			}
 		}
-		return new CodeRaise(expr);
+		return new CodeRaise(expr, from);
 	}
 
-	private Arg readArg() {
+	private RefNameTypedDefault readArg() {
 		char c = blanks();
 		if( skip_('/') ) {
-			return new Arg("/");
+			return new RefNameTypedDefault(0, "/", null, null);
 		}
+		int stars = 0;
 		while( c == '*' ) {
+			++stars;
 			++ip;
 			c = char_();
 		}
 		final String name = name_();
+		Value type = null;
+		Value defualt = null;
 		if( skip( ':') ) {
-			readExpr();
+			type = readExpr();
 		}
 		if( skip('=') ) {
-			readExpr();
+			defualt = readExpr();
 		}
-		return new Arg(name);
+		return new RefNameTypedDefault(stars, name, type, defualt);
 	}
 
-	private List<Value> readExtends() {
-		final List<Value> list = new ArrayList<>();
+	private List<ValueTypedDefault> readExtends() {
+		final List<ValueTypedDefault> list = new ArrayList<>();
 		if( skip('(') ) {
 			loopTo( (Object) -> {
 				final Value value = readExpr();
+				Value defualt = null;
 				if( skip('=') ) {
-					readExpr();
+					defualt = readExpr();
 				}
-				list.add(value);
+				list.add(new ValueTypedDefault(value, null, defualt));
 			}, ')');
 		}
 		eoc();
 		return list;
 	}
 
-	public final List<Value> readImport_() {
-		final List<Value> list = new ArrayList<>();
+	public final List<AnyName> readImport_() {
+		final List<AnyName> list = new ArrayList<>();
 		String name;
 		while( blanks_() != 0 && (name = name__()) != null ) {
 			list.add(readRecName_(name));
@@ -243,89 +257,133 @@ public class PyParse extends PyExpr {
 		return list;
 	}
 
-	public Value readImport() {
-		return new CodeImport(readImport_());
+	public AnyName anyName(final List<String> list) {
+		if( list.size() == 0 ) {
+			err("No from");
+		}
+		AnyName name = new AnyName(list.get(0));
+		for( int i = list.size(); --i >= 1; ) {
+			name = new RecName(list.get(i), name);
+		}
+		return name;
 	}
 
-	public Value readFrom() {
-		List<String> from = new ArrayList<>();
-		blanks_();
-		while( true ) {
-			if( char_() == '.' ) {
+	public Code readFrom() {
+		final AnyName from;
+		{
+			List<String> list = new ArrayList<>();
+			blanks_();
+			while( char_() == '.' ) {
 				++ip;
-				if( char_() == '.' ) {
-					++ip;
-					from.add("..");
-					continue;
+				list.add(".");
+			}
+			do {
+				String n = name__();	// name_();
+				if( n == null ) {
+					break;
 				}
-				from.add(".");
-				continue;
+				list.add(n);
 			}
-			String n = name__();	// name_();
-			if( n == null ) {
-				break;
-			}
-			from.add(n);
+			while( skip('.'));
+			from = anyName(list);
 		}
 		reqWord("import");
+		final TmpList res = new TmpList();
 		if( skip('*') ) {
+			res.list.add( new CodeImport(from, new AnyName("*")) );
 			blanks_();
 		}
 		else {
 			if( skip('(') ) {
-				final List<Value> list = cntRead( (Value) ->  readRecName_(token()), null, ')');
+				final List<AnyName> list = cntRead( (Value) ->  readRecName_(token()), ')');
+				list.forEach( na -> res.list.add( new CodeImport( from, na)) );
 			}
 			else {
-				readImport_();
+				readImport_().forEach( imp -> res.list.add( new CodeImport(from, imp)));
 			}
 		}
-		return new CodeFrom(from, null);
+		return res;
 	}
 
-	public Value readAnnotation() {
-		final Value name = readRecName_(name_());
-		List<Value> params = null;
+	public final TmpList readImport() {
+		final TmpList res = new TmpList();
+		readImport_().forEach( imp -> res.list.add( new CodeImport(null, imp)));
+		return res;
+	}
+
+	public Annotation readAnnotation() {
+		final AnyName name = readRecName_(name_());
+		List<ValueTypedDefault> params = null;
 		if( skip('(') ) {
-			loopTo( (Object) -> {
+			params = cntRead( (Object) -> {
 				blanks();
-				readExpr_();
+				final Value value = readExpr_();
+				Value defualt = null;
 				if( skip('=') ) {
-					readExpr_();
+					defualt = readExpr_();
 				}
+				return new ValueTypedDefault(value, null, defualt);
 			}, ')');
 			blanks();
 		}
-		return new CodeAnnotation(name, params);
+		return new Annotation(name, params);
 	}
 
-	public Value readDef() {
+	private Annotation[] getAnnotations() {
+		if( annotations.size() > 0 ) {
+			final Annotation[] ret = annotations.toArray(new Annotation[annotations.size()]);
+			annotations.clear();
+			return ret;
+		}
+		return null;
+	}
+
+	public Code readClass() {
+		final Annotation[] annos = getAnnotations();
 		final int code_depth = ident;
 		final String name = name_();
-		final List<Arg> args = skip('(') ? cntRead( (Arg) -> readArg(), null, ')') : null;
+		final List<ValueTypedDefault> extnds = readExtends();
+		++inClass;
+		final List<Code> body = readCode(code_depth);
+		--inClass;
+		return new CodeClass(annos, name, extnds, body);
+	}
+
+	public Code readDef() {
+		final Annotation[] annos = getAnnotations();
+		final int code_depth = ident;
+		final String name = name_();
+		final List<RefNameTypedDefault> args = skip('(') ? cntRead( (Arg) -> readArg(), ')') : null;
 		if( skip( "->") ) {
 			readExpr();
 		}
 		eoc();
-		final List<Value> code = readCode(code_depth);
-		return new CodeDef(name, args, code);
+		++inDef;
+		final List<Code> code = readCode(code_depth);
+		--inDef;
+		return new CodeFunc(annos, inClass > 0 && inDef == 0, name, args, code);
 	}
 
-	public Value readAssert() {
+	public Code readAssert() {
 		final Value expr = readExpr();
-		final Value msg = skip_(',') ? readExpr_() : null;
+		Value msg = null;
+		if( skip_(',') ) {
+			msg = readExpr_();
+		}
 		return new CodeAssert(expr, msg);	
 	}
 
-	public Value readYield() {
+	public Code readYield() {
 		Value expr = null;
+		List<Value> from = null;
 		if( blanks_() != 0 ) {
 			skipWord_("from");
-			readCommaExpr();
+			from = readCommaExpr();
 		}
-		return new CodeYield(expr);
+		return new CodeYield(expr, from);
 	}
 
-	private Value readCode_() {
+	private Code readCode_() {
 		isNextLine = false;
 		String token = token();
 		while( token != null ) {
@@ -338,7 +396,7 @@ public class PyParse extends PyExpr {
 			case "from":
 				return readFrom();
 			case "class":
-				return new CodeClass(name_(), readExtends(), readCode(ident));
+				return readClass();
 			case "def":
 				return readDef();
 			case "global":
@@ -377,44 +435,54 @@ public class PyParse extends PyExpr {
 			break;
 		}
 		if( skip_('@') ) {
-			return readAnnotation();
+			annotations.add(readAnnotation());
+			return readCode_();
 		}
 		Value expr;
 		if( skip_('(') ) {
-			expr = cont(new Values(cntRead( (Object) -> readExpr(), null, ')')));
+			expr = cont(new ValuesInPar(cntRead( (Object) -> readExpr(), ')')));
 		}
 		else {
 			expr = readExpr();
 		}
+		if( expr == null ) {
+			err("no code");
+		}
 		{
 			final List<Value> list = new ArrayList<>();
-			do {
-				list.add(expr);
+			list.add(expr);
+			while( skip(',')) {
+				list.add(readExpr());
 			}
-			while( skip(','));
 			expr = list.size() > 1 ? new Values(list) : list.get(0);
 		}
 		if( skip(':') ) {
 			final Value type = readExpr();
+			Value defualt = null;
 			if( skip('=') ) {
-				readExpr();
+				defualt = readExpr();
 			}
-			return expr;
+			return new CodeDeclare( expr, type, defualt);
 		}
 		final String oper = oper(); 
 		if( oper != null ) {
 			switch( oper ) {
 			case "=":
-				final List<Value> list = new ArrayList<>();
+				final List<Value> list = new ArrayList<>();	// if tuple
 				do {
 					list.add(readExpr());
 				}
 				while( skip(',') );
-				expr = new CodeSet(expr, list.size() > 1 ? new Values(list) : list.get(0));
+				Value lexpr = expr;
+				expr = list.size() > 1 ? new Values(list) : list.get(0);
+				final TmpList listCode = new TmpList();
+				listCode.list.add(new CodeSet(lexpr, expr));
 				while( skip('=') ) {
-					readExpr();
+					lexpr = expr;
+					expr = readExpr();
+					listCode.list.add(new CodeSet(lexpr, expr));
 				}
-				break;
+				return listCode;
 			case "+=":
 			case "-=":
 			case "*=":
@@ -427,23 +495,22 @@ public class PyParse extends PyExpr {
 			case "|=":
 			case ">>=":
 			case "<<=":
-				expr = new CodeSet(expr, readExpr());
-				break;
+				return new CodeSet(expr, readExpr());
 			default:
 				err("unrecognized operator " + oper);
 				undo();
 			}
 		}
-		return expr;
+		return new CodeOfValue(expr);
 	}
 
-	public List<Value> readCode(final int min_code_depth) {
-		final List<Value> list = new ArrayList<>();
+	public List<Code> readCode(final int min_code_depth) {
+		final List<Code> list = new ArrayList<>();
 		while( nextLine() && blanks() != 0) {
 			if( ident <= min_code_depth ) {
 				break;
 			}
-			final Value code = readCode_();
+			final Code code = readCode_();
 			if( code == null ) {
 				err("no code");
 			}
@@ -454,7 +521,12 @@ public class PyParse extends PyExpr {
 				}
 				break;
 			}
-			list.add(code);
+			if( code instanceof TmpList ) {
+				list.addAll( ((TmpList)code).list);
+			}
+			else {
+				list.add(code);
+			}
 		}
 		return list;
 	}

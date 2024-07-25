@@ -2,14 +2,18 @@ package pyeater.code;
 
 import java.util.List;
 
-import pyeater.value.Value;
+public class CodeNonLocal extends Code {
 
-public class CodeNonLocal extends Value {
+	public final String[] names;
 
-	final String[] glob;
-	
-	public CodeNonLocal(final List<String> glob) {
-		this.glob = glob.toArray(new String[glob.size()]);
+	public CodeNonLocal(final List<String> names) {
+		super(CaseCode.CodeNonLocal);
+		this.names = names.toArray(new String[names.size()]);
+	}
+
+	@Override
+	public String toJava(final String pfx) {
+		return pfx + (names != null ? String.join(", ", names) : "EMPTY") + ";";
 	}
 
 }

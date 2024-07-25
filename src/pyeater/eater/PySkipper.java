@@ -10,22 +10,13 @@ class PySkipper {
 
 	private final Scanner scanner;
 
-	// current line number
-	int lineNo;
+	int lineNo;				// current line number
+	protected String line;	// current line
+	int ident;				// current line ident
+	int previp;				// line traverse previous pointer
+	int ip;					// line traverse pointer
+	boolean isNextLine;		// is in line+1
 
-	// current line
-	protected String line;
-
-	// current line ident
-	int ident;
-
-	// line traverse pointers
-	int previp;
-	int ip;
-
-	// is in line+1
-	boolean isNextLine;
-	
 	PySkipper(final Scanner scanner) {
 		this.scanner = scanner;
 	}
@@ -236,13 +227,13 @@ class PySkipper {
 
 	void req(final String s) {
 		if( !skip(s) ) {
-			err(s + " expented");
+			err(s + " expected");
 		}
 	}
 
 	void reqWord(final String s) {
 		if( !skipWord(s) ) {
-			err(s + " expented");
+			err(s + " expected");
 		}
 	}
 
@@ -283,7 +274,8 @@ class PySkipper {
 		return name__();
 	}
 
-	private void qqq___(final List<String> list, final String qqq) {
+	private String qqq___(final String qqq) {
+		final List<String> list = new ArrayList<>();
 		while( true ) {
 			int i = line.indexOf(qqq, ip);
 			if( i >= 0 && !(i > 0 && line.charAt(i-1) == '\\') ) {
@@ -304,6 +296,7 @@ class PySkipper {
 				break;
 			}
 		}
+		return String.join("\n", list);
 	}
 
 	private String readQuoted__() {
@@ -327,21 +320,18 @@ class PySkipper {
 		return null;
 	}
 
-	List<String> readQuoted_() {
+	String readQuoted_() {
 		final char c = char_();
 		if( c == '"' ) {
 			previp = ip;
 			++ip;
 			if( char_() == '"') {
-				final List<String> list = new ArrayList<>();
 				++ip;
 				if( char_() == '"') {
 					++ip;
-					qqq___(list, "\"\"\"");
-					return list;
+					return qqq___("\"\"\"");
 				}
-				list.add("");
-				return list;
+				return "";
 			}
 			--ip;
 		}
@@ -353,29 +343,16 @@ class PySkipper {
 				++ip;
 				if( char_() == '\'') {
 					++ip;
-					qqq___(list, "'''");
-					return list;
+					return qqq___("'''");
 				}
-				list.add("");
-				return list;
+				return "";
 			}
 			--ip;
 		}
-		final List<String> list = new ArrayList<>();
-		do {
-			final String q = readQuoted__();
-			if( q != null ) {
-				list.add(q);
-			}
-			else {
-				break;
-			}
-		}
-		while( blanks_() == c);
-		return list.size() > 0 ? list : null;
+		return readQuoted__();
 	}
 
-	Object readQuoted() {
+	String readQuoted() {
 		blanks();
 		return readQuoted_();
 	}
@@ -436,7 +413,7 @@ class PySkipper {
 		}
 	}
 
-	public <T> List<T> cntRead(final Function<Object, T> proc, final T empty, final char end) {
+	public <T> List<T> cntRead(final Function<Object, T> proc, final char end) {
 		final List<T> list = new ArrayList<>();
 		if( !skip(end) ) {
 			int i = 0;
@@ -446,12 +423,7 @@ class PySkipper {
 				}
 				final T item = proc.apply(null);
 				if( item == null ) {
-					if( empty != null ) {
-						list.add(empty);
-					}
-					else {
-						err("no item");
-					}
+					err("no item");
 				}
 				list.add(item);
 				skip(','); 
