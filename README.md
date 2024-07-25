@@ -1,5 +1,4 @@
 # py-eater
-python parser
 
 They are hiding in this python and they think I don't reach them there.
 
